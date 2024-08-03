@@ -28,10 +28,10 @@ jobs:
       - name: Build Jar 
         run: | 
           ./gradlew build 
-          mkdir -p ${{ github.workspace }}/artifacts 
-          mv target/*.jar ${{ github.workspace }}/artifacts/ 
+          mkdir -p ${{ github.workspace }}/build 
+          mv libs/*.jar ${{ github.workspace }}/build/ 
       - name: Upload all artifacts
         uses: actions/upload-artifact@v4
         with:
           name: tooltips
-          path: artifacts/*.jar
+          path: build/*.jar
