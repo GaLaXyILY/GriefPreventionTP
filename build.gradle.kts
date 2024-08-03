@@ -32,7 +32,7 @@ repositories {
 }
 dependencies {
     compileOnly("io.papermc.paper:paper-api:1.21-R0.1-SNAPSHOT")
-    compileOnly("com.github.TechFortress:GriefPrevention:16.18.4")
+    compileOnly("com.github.GriefPrevention:GriefPrevention:16.18.4")
 
     compileOnly("com.github.MilkBowl:VaultAPI:1.7")
     compileOnly("org.geysermc.floodgate:api:2.2.0-SNAPSHOT")
