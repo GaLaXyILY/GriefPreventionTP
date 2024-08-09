@@ -28,10 +28,22 @@ jobs:
       - name: Build Jar 
         run: | 
           ./gradlew build 
-          mkdir -p ${{ github.workspace }}/build 
-          mv libs/*.jar ${{ github.workspace }}/build/ 
-      - name: Upload all artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: tooltips
-          path: build/*.jar
+          mkdir -p ${{ github.workspace }}/build  
+          mv build/libs/*.jar ${{ github.workspace }}/build/ 
+      - name: Set version as environment variable 
+        run: | 
+          RELEASE_VERSION=$(./gradlew properties -q | grep "version:" | awk '{print $2}') 
+          echo "RELEASE_VERSION=$RELEASE_VERSION" >> $GITHUB_ENV 
+      - name: Use Version Number 
+        run: | 
+          echo "Version number is ${{ env.RELEASE_VERSION }}" 
+      - uses: "marvinpinto/action-automatic-releases@latest"  
+        with:  
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"  
+          automatic_release_tag: "${{ env.RELEASE_VERSION }}"  
+          prerelease: false  
+          title: "Release ${{ env.RELEASE_VERSION }}"  
+          files: |  
+            ${{ github.workspace }}/build/*.jar 
+      - name: DONE!!! 
+        run: echo "done"
