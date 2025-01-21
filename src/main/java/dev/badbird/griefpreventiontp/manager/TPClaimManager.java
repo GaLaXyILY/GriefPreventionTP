@@ -2,6 +2,8 @@ package dev.badbird.griefpreventiontp.manager;
 
 import dev.badbird.griefpreventiontp.GriefPreventionTP;
 import dev.badbird.griefpreventiontp.api.ClaimInfo;
+import dev.badbird.griefpreventiontp.util.ConfigUtil;
+import lombok.Getter;
 import me.ryanhamshire.GriefPrevention.Claim;
 import me.ryanhamshire.GriefPrevention.GriefPrevention;
 import me.ryanhamshire.GriefPrevention.PlayerData;
@@ -10,6 +12,7 @@ import net.badbird5907.blib.util.Tasks;
 import net.milkbowl.vault.economy.Economy;
 import net.milkbowl.vault.permission.Permission;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.RegisteredServiceProvider;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,14 +23,27 @@ public class TPClaimManager {
     private ConcurrentHashMap<UUID, CopyOnWriteArrayList<ClaimInfo>> claims = new ConcurrentHashMap<>();
     private CopyOnWriteArrayList<ClaimInfo> publicClaims = new CopyOnWriteArrayList<>();
 
-    private CopyOnWriteArrayList<ClaimInfo> allClaims = new CopyOnWriteArrayList<>(); //Holds references to all claims
+    private CopyOnWriteArrayList<ClaimInfo> allClaims = new CopyOnWriteArrayList<>(); // Holds references to all claims
 
-    private List<Pair<String, Integer>> maxPublic = new ArrayList<>(),
-            createCost = new ArrayList<>(); // List because we want to sort it
+    private List<Pair<String, Integer>> maxPublic = new ArrayList<>(), createCost = new ArrayList<>(); // List because we want to sort it
     private boolean enableMaxPublic = false, enableVaultIntegration = false, enablePublicCost = false;
 
 
+    @Getter
     private Object vaultEconomy;
+
+    private static int compareGroups(Pair<String, Integer> o1, Pair<String, Integer> o2) {
+        int i1 = o1.getValue1();
+        int i2 = o2.getValue1();
+
+        if (i1 == -1) {
+            return -1;
+        } else if (i2 == -1) {
+            return 1;
+        } else {
+            return i1 < i2 ? 1 : -1;
+        }
+    }
 
     public void init() {
         load();
@@ -48,32 +64,11 @@ public class TPClaimManager {
         enablePublicCost = GriefPreventionTP.getInstance().getConfig().getBoolean("vault-integration.public-claim-cost.enabled", false);
         if (enableMaxPublic) {
             Map<String, Object> map = GriefPreventionTP.getInstance().getConfig().getConfigurationSection("max-public.rules").getValues(false);
-            for (Map.Entry<String, Object> stringObjectEntry : map.entrySet()) {
-                String k = stringObjectEntry.getKey();
-                Object v = stringObjectEntry.getValue();
-                int i = -1;
-                if (v instanceof String) {
-                    i = Integer.parseInt((String) v);
-                } else if (v instanceof Integer) {
-                    i = (Integer) v;
-                }
-                maxPublic.add(new Pair<>(k, i));
-            }
+            maxPublic.addAll(ConfigUtil.parseGroups(map));
 
             // sort by biggest first, consider -1 largest
             // largest should be considered first when looping through this list
-            maxPublic.sort((o1, o2) -> {
-                int i1 = o1.getValue1();
-                int i2 = o2.getValue1();
-
-                if (i1 == -1) {
-                    return -1;
-                } else if (i2 == -1) {
-                    return 1;
-                } else {
-                    return i1 < i2 ? 1 : -1;
-                }
-            });
+            maxPublic.sort(TPClaimManager::compareGroups);
         }
         if (enableVaultIntegration) {
             boolean vaultEnabled = GriefPreventionTP.getInstance().getServer().getPluginManager().isPluginEnabled("Vault");
@@ -82,37 +77,21 @@ public class TPClaimManager {
                 enableVaultIntegration = false;
                 return;
             }
+            RegisteredServiceProvider<Economy> registration = GriefPreventionTP.getInstance().getServer().getServicesManager().getRegistration(Economy.class);
+            if (registration == null) {
+                GriefPreventionTP.getInstance().getLogger().warning("vault-integration was enabled in the config, but no economy ");
+                enableVaultIntegration = false;
+                return;
+            }
+            vaultEconomy = registration.getProvider();
         }
         if (enableVaultIntegration && enablePublicCost) {
             Map<String, Object> map = GriefPreventionTP.getInstance().getConfig().getConfigurationSection("vault-integration.public-claim-cost.groups").getValues(false);
-            for (Map.Entry<String, Object> stringObjectEntry : map.entrySet()) {
-                String k = stringObjectEntry.getKey();
-                Object v = stringObjectEntry.getValue();
-                int i = -1;
-                if (v instanceof String) {
-                    i = Integer.parseInt((String) v);
-                } else if (v instanceof Integer) {
-                    i = (Integer) v;
-                }
-                createCost.add(new Pair<>(k, i));
-            }
+            createCost.addAll(ConfigUtil.parseGroups(map));
 
             // sort by biggest first, consider -1 largest
             // largest should be considered first when looping through this list
-            createCost.sort((o1, o2) -> {
-                int i1 = o1.getValue1();
-                int i2 = o2.getValue1();
-
-                if (i1 == -1) {
-                    return -1;
-                } else if (i2 == -1) {
-                    return 1;
-                } else {
-                    return i1 < i2 ? 1 : -1;
-                }
-            });
-
-            vaultEconomy = GriefPreventionTP.getInstance().getServer().getServicesManager().getRegistration(Economy.class).getProvider();
+            createCost.sort(TPClaimManager::compareGroups);
         }
 
 
@@ -262,6 +241,17 @@ public class TPClaimManager {
         return true;
     }
 
+    public boolean withdrawPlayer(Player player, int cost) {
+        if (GriefPreventionTP.getInstance().isUseVault() && vaultEconomy != null && cost > 0) {
+            if (!playerHasEnough(player, cost)) {
+                return false;
+            }
+            Economy economy = (Economy) vaultEconomy;
+            return economy.withdrawPlayer(player, cost).transactionSuccess();
+        }
+        return true;
+    }
+
     public void updateClaims(UUID owner) {
         PlayerData playerData = GriefPrevention.instance.dataStore.getPlayerData(owner);
         for (ClaimInfo claim : getClaims(owner)) {
@@ -270,9 +260,5 @@ public class TPClaimManager {
                 claim.setName("Unnamed (" + claim.getPlayerClaimCount() + ")");
             }
         }
-    }
-
-    public Object getVaultEconomy() {
-        return vaultEconomy;
     }
 }

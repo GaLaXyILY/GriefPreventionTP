@@ -16,10 +16,7 @@ import net.badbird5907.blib.menu.buttons.impl.PreviousPageButton;
 import net.badbird5907.blib.menu.menu.PaginatedMenu;
 import net.badbird5907.blib.util.CC;
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.TextComponent;
-import net.kyori.adventure.text.TextReplacementConfig;
 import net.kyori.adventure.text.minimessage.MiniMessage;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.conversations.Prompt;
@@ -32,9 +29,6 @@ import org.geysermc.floodgate.api.FloodgateApi;
 
 import java.util.*;
 import java.util.function.BiPredicate;
-import java.util.stream.Collectors;
-
-import static dev.badbird.griefpreventiontp.util.AdventureUtil.cleanItalics;
 
 public class ClaimsMenu extends PaginatedMenu {
     private final UUID uuid;
@@ -156,8 +150,8 @@ public class ClaimsMenu extends PaginatedMenu {
             public ItemStack getItem(Player player) {
                 Material material = Material.valueOf(plugin.getConfig().getString("menu.next-page.type"));
                 ItemStack item = new ItemStack(material);
-                Component name = AdventureUtil.getComponentFromConfig("claims", "menu.next-page.name", "<green>Next Page");
-                List<Component> lore = AdventureUtil.getComponentListFromConfig("claims", "menu.next-page.lore", List.of(
+                Component name = AdventureUtil.getComponentFromConfig("config", "menu.next-page.name", "<green>Next Page");
+                List<Component> lore = AdventureUtil.getComponentListFromConfig("config", "menu.next-page.lore", List.of(
                         "<gray>Click to go to the next page."
                 ));
                 AdventureUtil.setItemDisplayName(item, name);
@@ -179,8 +173,8 @@ public class ClaimsMenu extends PaginatedMenu {
             public ItemStack getItem(Player player) {
                 Material material = Material.valueOf(plugin.getConfig().getString("menu.previous-page.type"));
                 ItemStack item = new ItemStack(material);
-                Component name = AdventureUtil.getComponentFromConfig("claims", "menu.previous-page.name", "<green>Previous Page");
-                List<Component> lore = AdventureUtil.getComponentListFromConfig("claims", "menu.previous-page.lore", List.of(
+                Component name = AdventureUtil.getComponentFromConfig("config", "menu.previous-page.name", "<green>Previous Page");
+                List<Component> lore = AdventureUtil.getComponentListFromConfig("config", "menu.previous-page.lore", List.of(
                         "<gray>Click to go to the previous page."
                 ));
                 AdventureUtil.setItemDisplayName(item, name);
@@ -213,18 +207,29 @@ public class ClaimsMenu extends PaginatedMenu {
             IconWrapper setIcon = claimInfo.getIcon();
             ItemStack stack = setIcon != null ? setIcon.getItemStack() : new ItemStack(Material.PLAYER_HEAD);
             String name = AdventureUtil.getMiniMessageFromConfig("claims", "claim.name", "<green>{name}", "name", claimInfo.getName());
+            int cost = GriefPreventionTP.getInstance().getTeleportManager().getTPCost(player, claimInfo.isPublic());
+            boolean hasMoney = cost <= 0 || GriefPreventionTP.getInstance().getClaimManager().playerHasEnough(player, cost);
             List<String> lore1 =
-                    new ArrayList<>(AdventureUtil.getMiniMessageListFromConfigDef("claims", "claim.lore", new ArrayList<>(List.of(
-                            "<gray>Owner: {owner}",
-                            "<gray>ID: {id}",
-                            "<gray>{x}, {y}, {z}",
-                            "",
-                            "hasPerm:<gray>Click to teleport.",
-                            "noPerm:<red>No permission to teleport.",
-                            "canEdit:<gray>Right click to manage."
-                    )), "owner", claimInfo.getOwnerName(), "id", claimInfo.getClaimID(), "x", claimInfo.getSpawn().getX(), "y", claimInfo.getSpawn().getY(), "z", claimInfo.getSpawn().getZ()));
+                    new ArrayList<>(
+                            AdventureUtil.getMiniMessageListFromConfigDef("claims", "claim.lore", new ArrayList<>(List.of(
+                                            "<gray>Owner: {owner}",
+                                            "<gray>ID: {id}",
+                                            "<gray>{x}, {y}, {z}",
+                                            "",
+                                            "canTp:<gray>Click to teleport.",
+                                            "noPerm:<red>No permission to teleport.",
+                                            "canEdit:<gray>Right click to manage."
+                                    )),
+                                    "owner", claimInfo.getOwnerName(),
+                                    "id", claimInfo.getClaimID(),
+                                    "x", claimInfo.getSpawn().getX(),
+                                    "y", claimInfo.getSpawn().getY(),
+                                    "z", claimInfo.getSpawn().getZ(),
+                                    "cost", cost
+                            )
+                    );
             boolean bedrock = Bukkit.getPluginManager().isPluginEnabled("floodgate") && FloodgateApi.getInstance().isFloodgatePlayer(player.getUniqueId());
-            List<Component> lore = processLore(lore1, canEdit, bedrock, hasPermission);
+            List<Component> lore = processLore(lore1, canEdit, bedrock, hasPermission, hasMoney);
             AdventureUtil.setItemDisplayName(stack, MiniMessage.miniMessage().deserialize(name));
             AdventureUtil.setItemLore(stack, lore);
 
@@ -237,14 +242,17 @@ public class ClaimsMenu extends PaginatedMenu {
             return stack;
         }
 
-        private static List<Component> processLore(List<String> lore1, boolean canEdit, boolean bedrock, boolean hasPermission) { // fuck it we're doing this for now
+        private static List<Component> processLore(List<String> lore1, boolean canEdit, boolean bedrock, boolean hasPermission, boolean hasMoney) { // fuck it we're doing this for now
             Map<String, BiPredicate<Boolean, Boolean>> conditions = Map.of(
                     "canEdit:bedrock:", (c, b) -> c && b,
                     "canEdit:java:", (c, b) -> c && !b,
                     "canEdit:", (c, b) -> c,
                     "bedrock:", (c, b) -> b,
                     "hasPerm:", (c, b) -> hasPermission,
-                    "noPerm:", (c, b) -> !hasPermission
+                    "noPerm:", (c, b) -> !hasPermission,
+                    "noMoney:", (c, b) -> !hasMoney,
+                    "hasMoney:", (c, b) -> hasMoney,
+                    "canTp:", (c,b) -> hasPermission && hasMoney
             );
 
             return lore1.stream().map(str -> {
@@ -255,7 +263,7 @@ public class ClaimsMenu extends PaginatedMenu {
                         if (condition.test(canEdit, bedrock)) {
                             return MiniMessage.miniMessage().deserialize(str.substring(prefix.length()));
                         }
-                        return  null;
+                        return null;
                     }
                 }
                 return MiniMessage.miniMessage().deserialize(str);
@@ -281,7 +289,7 @@ public class ClaimsMenu extends PaginatedMenu {
                 MessageManager.sendMessage(player, "messages.no-spawn-set");
                 return;
             }
-            GriefPreventionTP.getInstance().getTeleportManager().teleport(player, claimInfo.getSpawn().getLocation());
+            GriefPreventionTP.getInstance().getTeleportManager().teleport(player, claimInfo.getSpawn().getLocation(), claimInfo.isPublic());
         }
     }
 

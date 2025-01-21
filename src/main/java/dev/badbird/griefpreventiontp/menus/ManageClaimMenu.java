@@ -176,7 +176,7 @@ public class ManageClaimMenu extends Menu {
             ItemStack itemStack = new ItemStack(
                     Material.valueOf(MenuManager.getString("manage-claim", "rename-claim.type", "NAME_TAG"))
             );
-            Component name = AdventureUtil.getComponentFromConfig("manage-claim", "rename-claim.title", "<green>Rename Claim", "name", claimInfo.getName());
+            Component name = AdventureUtil.getComponentFromConfig("manage-claim", "rename-claim.name", "<green>Rename Claim", "name", claimInfo.getName());
             AdventureUtil.setItemDisplayName(itemStack, name);
             List<Component> lore = AdventureUtil.getComponentListFromConfigDef("manage-claim", "rename-claim.lore", Arrays.asList("", "<gray>Click to rename."));
             if (!lore.isEmpty()) AdventureUtil.setItemLore(itemStack, lore);
@@ -296,15 +296,18 @@ public class ManageClaimMenu extends Menu {
                 if (claimInfo.isPublic()) {
                     cost = GriefPreventionTP.getInstance().getClaimManager().getCostToMakePublic(player);
                     if (cost > 0) {
-                        Economy economy = (Economy) GriefPreventionTP.getInstance().getClaimManager().getVaultEconomy();
-                        if (!player.hasPermission("gptp.bypass.public")) economy.withdrawPlayer(player, cost);
+                        boolean success = GriefPreventionTP.getInstance().getClaimManager().withdrawPlayer(player, cost);
+                        if (!success) {
+                            MessageManager.sendMessage(player, "messages.not-enough-money.public");
+                            return;
+                        }
                     }
                 }
                 claimInfo.setPublic(!claimInfo.isPublic());
                 claimInfo.save();
             } else {
                 if (canMakePublic == 2) {
-                    MessageManager.sendMessage(player, "messages.not-enough-money");
+                    MessageManager.sendMessage(player, "messages.not-enough-money.public");
                     update(player);
                     return;
                 }

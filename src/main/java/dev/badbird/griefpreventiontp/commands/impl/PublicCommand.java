@@ -58,7 +58,7 @@ public class PublicCommand {
                 MessageManager.sendMessage(sender, "messages.max-public-exceeded");
                 return;
             } else if (canMakePublic == 2) {
-                MessageManager.sendMessage(sender, "messages.not-enough-money");
+                MessageManager.sendMessage(sender, "messages.not-enough-money.public");
                 return;
             }
             cost = GriefPreventionTP.getInstance().getClaimManager().getCostToMakePublic(sender.getPlayer());
@@ -67,8 +67,10 @@ public class PublicCommand {
                     MessageManager.sendMessage(sender, "messages.verify-public-cost.message", cost);
                     return;
                 }
-                Economy economy = (Economy) GriefPreventionTP.getInstance().getClaimManager().getVaultEconomy();
-                economy.withdrawPlayer(sender, cost);
+                if (!GriefPreventionTP.getInstance().getClaimManager().withdrawPlayer(sender, cost)) {
+                    MessageManager.sendMessage(sender, "messages.not-enough-money.public");
+                    return;
+                }
             }
             ci.setPublic(true);
             MessageManager.sendMessage(sender, "messages.public-on", cost);
